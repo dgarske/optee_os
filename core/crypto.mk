@@ -202,3 +202,9 @@ _CFG_CORE_LTC_HASH := $(call ltc-one-enabled, MD5 SHA1 SHA224 SHA256 SHA384 \
 _CFG_CORE_LTC_MAC := $(call ltc-one-enabled, HMAC CMAC CBC_MAC)
 _CFG_CORE_LTC_CBC := $(call ltc-one-enabled, CBC CBC_MAC)
 _CFG_CORE_LTC_ASN1 := $(call ltc-one-enabled, RSA DSA ECC)
+
+###############################################################
+# wolfssl specifics
+###############################################################
+
+# TODO

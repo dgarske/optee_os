@@ -95,6 +95,15 @@ libname = utils
 libdir = lib/libutils
 include mk/lib.mk
 
+CFG_CORE_WOLFSSL_MPI ?= n
+
+ifeq ($(CFG_CORE_WOLFSSL_MPI),y)
+# wolfCrypt/wolfSSL library support
+CFG_CRYPTOLIB_NAME = wolfcrypt
+CFG_CRYPTOLIB_DIR = lib/libwolfssl
+CFG_CORE_MBEDTLS_MPI = n
+endif
+
 # CFG_CRYPTOLIB_NAME must not be changed beyond this line
 CFG_CRYPTOLIB_NAME_$(CFG_CRYPTOLIB_NAME) := y
 
@@ -119,7 +128,7 @@ libdir = core/lib/libtomcrypt
 base-prefix :=
 include mk/lib.mk
 base-prefix := $(sm)-
-endif
+endif #mbedtls
 
 ifeq ($(firstword $(subst /, ,$(CFG_CRYPTOLIB_DIR))),core)
 # If a library can be compiled for both core and user space a base-prefix
