@@ -16,11 +16,17 @@ srcs-y += tee_socket_pta.c
 srcs-y += tee_system_pta.c
 
 
+ifeq ($(CFG_TA_WOLFSSL_MPI),y)
+cflags-lib-y += -DWOLFSSL_USER_SETTINGS
+srcs-y += tee_api_arith_mp.c
+else
 ifeq ($(CFG_TA_MBEDTLS_MPI),y)
 srcs-y += tee_api_arith_mpi.c
 else
 srcs-y += tee_api_arith_mpa.c
 endif
+endif #wolfssl
+
 endif #ifneq ($(sm),ldelf)
 
 subdirs-y += arch/$(ARCH)

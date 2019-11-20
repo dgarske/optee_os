@@ -481,6 +481,9 @@ CFG_TA_MBEDTLS ?= y
 # need to be called to test anything
 CFG_TA_MBEDTLS_SELF_TEST ?= y
 
+# Compiles wolfSSL for TA usage
+CFG_TA_WOLFSSL ?= n
+
 # By default use tomcrypt as the main crypto lib providing an implementation
 # for the API in <crypto/crypto.h>
 # CFG_CRYPTOLIB_NAME is used as libname and

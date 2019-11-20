@@ -448,6 +448,10 @@
 
 /* TEE Arithmetical APIs */
 
+#ifdef TEE_BIGINT_SIZE_CUSTOM
+uint32_t TEE_BigIntSizeInU32(uint32_t n);
+#else
 #define TEE_BigIntSizeInU32(n) ((((n)+31)/32)+2)
+#endif
 
 #endif /* TEE_API_DEFINES_H */

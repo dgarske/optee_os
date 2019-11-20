@@ -32,6 +32,7 @@ ta-mk-file-export-vars-$(sm) += CFG_SECURE_DATA_PATH
 ta-mk-file-export-vars-$(sm) += CFG_TA_MBEDTLS_SELF_TEST
 ta-mk-file-export-vars-$(sm) += CFG_TA_MBEDTLS
 ta-mk-file-export-vars-$(sm) += CFG_TA_MBEDTLS_MPI
+ta-mk-file-export-vars-$(sm) += CFG_TA_WOLFSSL
 ta-mk-file-export-vars-$(sm) += CFG_SYSTEM_PTA
 ta-mk-file-export-vars-$(sm) += CFG_TA_DYNLINK
 ta-mk-file-export-vars-$(sm) += CFG_TEE_TA_LOG_LEVEL
@@ -85,6 +86,11 @@ libuuid = 71855bba-6055-4293-a63f-b0963a737360
 include mk/lib.mk
 
 CFG_TA_MBEDTLS_MPI ?= y
+CFG_TA_WOLFSSL_MPI ?= n
+ifeq ($(CFG_TA_WOLFSSL_MPI),y)
+$(call force,CFG_TA_WOLFSSL,y)
+CFG_TA_MBEDTLS = n
+else
 ifeq ($(CFG_TA_MBEDTLS_MPI),y)
 mplib-for-utee = mbedtls
 $(call force,CFG_TA_MBEDTLS,y)
@@ -95,6 +101,7 @@ libdir = lib/libmpa
 libuuid = 39b498d9-1e1f-4ae0-a9e1-6d1caf8ec731
 libl = utils
 include mk/lib.mk
+endif
 endif
 
 ifeq ($(CFG_TA_MBEDTLS),y)
