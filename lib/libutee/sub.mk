@@ -18,6 +18,7 @@ srcs-y += tee_system_pta.c
 
 ifeq ($(CFG_TA_WOLFSSL_MPI),y)
 cflags-lib-y += -DWOLFSSL_USER_SETTINGS
+cflags-lib-y += -Wno-strict-aliasing
 srcs-y += tee_api_arith_mp.c
 else
 ifeq ($(CFG_TA_MBEDTLS_MPI),y)

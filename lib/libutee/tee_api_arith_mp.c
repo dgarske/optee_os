@@ -21,6 +21,7 @@
 #include <utee_syscalls.h>
 #include <util.h>
 
+/* FMM = Modulus Math */
 
 /*************************************************************
  * PANIC
@@ -145,7 +146,7 @@ TEE_Result TEE_BigIntConvertToS32(int32_t *dest, const TEE_BigInt *src)
     mp_int* mpi = (mp_int*)src;
     int32_t rc, isNeg = 0, tmpVal = 0;
 
-    if (src == NULL) {
+    if (dest == NULL || src == NULL) {
         return TEE_ERROR_BAD_PARAMETERS;
     }
 
@@ -164,6 +165,7 @@ TEE_Result TEE_BigIntConvertToS32(int32_t *dest, const TEE_BigInt *src)
     if (isNeg) {
         tmpVal = -tmpVal;
     }
+    *dest = tmpVal;
 
 	return TEE_SUCCESS;
 }
@@ -178,12 +180,13 @@ int32_t TEE_BigIntCmp(const TEE_BigInt *op1, const TEE_BigInt *op2)
         return TEE_ERROR_BAD_PARAMETERS;
     }
 
-    rc = mp_cmp(op1, op2);
+    rc = mp_cmp(mp1, mp2);
     return rc;
 }
 
 int32_t TEE_BigIntCmpS32(const TEE_BigInt *op, int32_t shortVal)
 {
+    int32_t rc;
     mp_int tmpMp;
     TEE_BigInt* tmpBi = (TEE_BigInt*)&tmpMp;
 
@@ -192,10 +195,8 @@ int32_t TEE_BigIntCmpS32(const TEE_BigInt *op, int32_t shortVal)
     }
 
     TEE_BigIntInit(tmpBi, sizeof(int32_t));
-    rc = TEE_BigIntConvertFromS32(tmpBi, shortVal);
-    if (rc == TEE_SUCCESS) {
-        rc = TEE_BigIntCmp(op, tmpBi);
-    }
+    TEE_BigIntConvertFromS32(tmpBi, shortVal);
+    rc = TEE_BigIntCmp(op, tmpBi);
     TEE_BigIntClear(tmpBi);
 
 	return rc;
@@ -208,30 +209,31 @@ void TEE_BigIntShiftRight(TEE_BigInt *dest, const TEE_BigInt *op, size_t bits)
     mp_int* mpOp = (mp_int*)op;
 
     if (dest == NULL || op == NULL) {
-        TEE_Panic("TEE_BigIntShiftRight: args");
+        TEE_BigInt_Panic("TEE_BigIntShiftRight: args");
         return;
     }
 
     /* if src and dst are same, nothing is done here */
     rc = mp_copy(mpOp, mpDst);
-    if (rc == MP_OKAY) {
-        rc = mp_rshb(mpDst, bits);
-    }
     if (rc != MP_OKAY) {
-        TEE_Panic("TEE_BigIntShiftRight: error");
+        TEE_BigInt_Panic("TEE_BigIntShiftRight: error");
+        return;
     }
+
+    mp_rshb(mpDst, bits);
 }
 
 bool TEE_BigIntGetBit(const TEE_BigInt *src, uint32_t bitIndex)
 {
 	bool rc;
-	mp_int mpi;
+    mp_int* mpSrc = (mp_int*)src;
 
-	get_const_mpi(&mpi, src);
+    if (src == NULL) {
+        TEE_BigInt_Panic("TEE_BigIntGetBit: args");
+        return (bool)0;
+    }
 
-	rc = mbedtls_mpi_get_bit(&mpi, bitIndex);
-
-	put_mpi(&mpi);
+    rc = mp_is_bit_set(mpSrc, bitIndex);
 
 	return rc;
 }
@@ -239,93 +241,16 @@ bool TEE_BigIntGetBit(const TEE_BigInt *src, uint32_t bitIndex)
 uint32_t TEE_BigIntGetBitCount(const TEE_BigInt *src)
 {
 	uint32_t rc;
-	mp_int mpi;
+    mp_int* mpSrc = (mp_int*)src;
 
-	get_const_mpi(&mpi, src);
+    if (src == NULL) {
+        TEE_BigInt_Panic("TEE_BigIntGetBitCount: args");
+        return 0;
+    }
 
-	rc = mbedtls_mpi_bitlen(&mpi);
-
-	put_mpi(&mpi);
+    rc = mp_count_bits(mpSrc);
 
 	return rc;
-}
-
-static void bigint_binary(TEE_BigInt *dest, const TEE_BigInt *op1,
-			  const TEE_BigInt *op2,
-			  int (*func)(mp_int *X, const mp_int *A,
-				      const mp_int *B))
-{
-	mp_int mpi_dest;
-	mp_int mpi_op1;
-	mp_int mpi_op2;
-	mp_int *pop1 = &mpi_op1;
-	mp_int *pop2 = &mpi_op2;
-
-	get_mpi(&mpi_dest, dest);
-
-	if (op1 == dest)
-		pop1 = &mpi_dest;
-	else
-		get_const_mpi(&mpi_op1, op1);
-
-	if (op2 == dest)
-		pop2 = &mpi_dest;
-	else if (op2 == op1)
-		pop2 = pop1;
-	else
-		get_const_mpi(&mpi_op2, op2);
-
-	MPI_CHECK(func(&mpi_dest, pop1, pop2));
-
-	put_mpi(&mpi_dest);
-	if (pop1 == &mpi_op1)
-		put_mpi(&mpi_op1);
-	if (pop2 == &mpi_op2)
-		put_mpi(&mpi_op2);
-}
-
-static void bigint_binary_mod(TEE_BigInt *dest, const TEE_BigInt *op1,
-			      const TEE_BigInt *op2, const TEE_BigInt *n,
-			      int (*func)(mp_int *X, const mp_int *A,
-					  const mp_int *B))
-{
-	if (TEE_BigIntCmpS32(n, 2) < 0)
-		API_PANIC("Modulus is too short");
-
-	mp_int mpi_dest;
-	mp_int mpi_op1;
-	mp_int mpi_op2;
-	mp_int mpi_n;
-	mp_int *pop1 = &mpi_op1;
-	mp_int *pop2 = &mpi_op2;
-	mp_int mpi_t;
-
-	get_mpi(&mpi_dest, dest);
-	get_const_mpi(&mpi_n, n);
-
-	if (op1 == dest)
-		pop1 = &mpi_dest;
-	else
-		get_const_mpi(&mpi_op1, op1);
-
-	if (op2 == dest)
-		pop2 = &mpi_dest;
-	else if (op2 == op1)
-		pop2 = pop1;
-	else
-		get_const_mpi(&mpi_op2, op2);
-
-	get_mpi(&mpi_t, NULL);
-
-	MPI_CHECK(func(&mpi_t, pop1, pop2));
-	MPI_CHECK(mbedtls_mpi_mod_mpi(&mpi_dest, &mpi_t, &mpi_n));
-
-	put_mpi(&mpi_dest);
-	if (pop1 == &mpi_op1)
-		put_mpi(&mpi_op1);
-	if (pop2 == &mpi_op2)
-		put_mpi(&mpi_op2);
-	put_mpi(&mpi_t);
 }
 
 void TEE_BigIntAdd(TEE_BigInt *dest, const TEE_BigInt *op1,
@@ -516,112 +441,6 @@ bool TEE_BigIntRelativePrime(const TEE_BigInt *op1, const TEE_BigInt *op2)
 	return rc;
 }
 
-static bool mpi_is_odd(mp_int *x)
-{
-	return mbedtls_mpi_get_bit(x, 0);
-}
-
-static bool mpi_is_even(mp_int *x)
-{
-	return !mpi_is_odd(x);
-}
-
-/*
- * Based on libmpa implementation __mpa_egcd(), modified to work with MPI
- * instead.
- */
-static void mpi_egcd(mp_int *gcd, mp_int *a, mp_int *b,
-		     mp_int *x_in, mp_int *y_in)
-{
-	mbedtls_mpi_uint k;
-	mp_int A;
-	mp_int B;
-	mp_int C;
-	mp_int D;
-	mp_int x;
-	mp_int y;
-	mp_int u;
-
-	get_mpi(&A, NULL);
-	get_mpi(&B, NULL);
-	get_mpi(&C, NULL);
-	get_mpi(&D, NULL);
-	get_mpi(&x, NULL);
-	get_mpi(&y, NULL);
-	get_mpi(&u, NULL);
-
-	/* have y < x from assumption */
-	if (!mbedtls_mpi_cmp_int(y_in, 0)) {
-		MPI_CHECK(mbedtls_mpi_lset(a, 1));
-		MPI_CHECK(mbedtls_mpi_lset(b, 0));
-		MPI_CHECK(mbedtls_mpi_copy(gcd, x_in));
-		goto out;
-	}
-
-	MPI_CHECK(mbedtls_mpi_copy(&x, x_in));
-	MPI_CHECK(mbedtls_mpi_copy(&y, y_in));
-
-	k = 0;
-	while (mpi_is_even(&x) && mpi_is_even(&y)) {
-		k++;
-		MPI_CHECK(mbedtls_mpi_shift_r(&x, 1));
-		MPI_CHECK(mbedtls_mpi_shift_r(&y, 1));
-	}
-
-	MPI_CHECK(mbedtls_mpi_copy(&u, &x));
-	MPI_CHECK(mbedtls_mpi_copy(gcd, &y));
-	MPI_CHECK(mbedtls_mpi_lset(&A, 1));
-	MPI_CHECK(mbedtls_mpi_lset(&B, 0));
-	MPI_CHECK(mbedtls_mpi_lset(&C, 0));
-	MPI_CHECK(mbedtls_mpi_lset(&D, 1));
-
-	while (mbedtls_mpi_cmp_int(&u, 0)) {
-		while (mpi_is_even(&u)) {
-			MPI_CHECK(mbedtls_mpi_shift_r(&u, 1));
-			if (mpi_is_odd(&A) || mpi_is_odd(&B)) {
-				MPI_CHECK(mbedtls_mpi_add_mpi(&A, &A, &y));
-				MPI_CHECK(mbedtls_mpi_sub_mpi(&B, &B, &x));
-			}
-			MPI_CHECK(mbedtls_mpi_shift_r(&A, 1));
-			MPI_CHECK(mbedtls_mpi_shift_r(&B, 1));
-		}
-
-		while (mpi_is_even(gcd)) {
-			MPI_CHECK(mbedtls_mpi_shift_r(gcd, 1));
-			if (mpi_is_odd(&C) || mpi_is_odd(&D)) {
-				MPI_CHECK(mbedtls_mpi_add_mpi(&C, &C, &y));
-				MPI_CHECK(mbedtls_mpi_sub_mpi(&D, &D, &x));
-			}
-			MPI_CHECK(mbedtls_mpi_shift_r(&C, 1));
-			MPI_CHECK(mbedtls_mpi_shift_r(&D, 1));
-
-		}
-
-		if (mbedtls_mpi_cmp_mpi(&u, gcd) >= 0) {
-			MPI_CHECK(mbedtls_mpi_sub_mpi(&u, &u, gcd));
-			MPI_CHECK(mbedtls_mpi_sub_mpi(&A, &A, &C));
-			MPI_CHECK(mbedtls_mpi_sub_mpi(&B, &B, &D));
-		} else {
-			MPI_CHECK(mbedtls_mpi_sub_mpi(gcd, gcd, &u));
-			MPI_CHECK(mbedtls_mpi_sub_mpi(&C, &C, &A));
-			MPI_CHECK(mbedtls_mpi_sub_mpi(&D, &D, &B));
-		}
-	}
-
-	MPI_CHECK(mbedtls_mpi_copy(a, &C));
-	MPI_CHECK(mbedtls_mpi_copy(b, &D));
-	MPI_CHECK(mbedtls_mpi_shift_l(gcd, k));
-
-out:
-	put_mpi(&A);
-	put_mpi(&B);
-	put_mpi(&C);
-	put_mpi(&D);
-	put_mpi(&x);
-	put_mpi(&y);
-	put_mpi(&u);
-}
-
 void TEE_BigIntComputeExtendedGcd(TEE_BigInt *gcd, TEE_BigInt *u,
 				  TEE_BigInt *v, const TEE_BigInt *op1,
 				  const TEE_BigInt *op2)
@@ -678,13 +497,6 @@ void TEE_BigIntComputeExtendedGcd(TEE_BigInt *gcd, TEE_BigInt *u,
 	put_mpi(&mpi_op1);
 	if (pop2 == &mpi_op2)
 		put_mpi(&mpi_op2);
-}
-
-static int rng_read(void *ignored __unused, unsigned char *buf, size_t blen)
-{
-	if (utee_cryp_random_number_generate(buf, blen))
-		return MBEDTLS_ERR_MPI_FILE_IO_ERROR;
-	return 0;
 }
 
 int32_t TEE_BigIntIsProbablePrime(const TEE_BigInt *op,

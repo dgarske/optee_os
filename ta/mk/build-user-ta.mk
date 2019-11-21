@@ -37,6 +37,9 @@ endif
 ifeq ($(CFG_TA_MBEDTLS),y)
 libnames += mbedtls
 endif
+ifeq ($(CFG_TA_WOLFSSL),y)
+libnames += wolfssl
+endif
 libdeps = $(addsuffix .a, $(addprefix $(libdirs)/lib, $(libnames)))
 
 subdirs = $(patsubst %/,%,$(dir $(ta-mk-file)))

@@ -87,4 +87,4 @@ cflags-lib-y += -Wno-switch-default
 cflags-lib-y += -Wno-pedantic
 cflags-lib-y += -Wno-strict-aliasing
 cflags-lib-y += -Wno-aggregate-return
-cflags-lib-y += -Wno-Wcast-align
+cflags-lib-y += -Wno-cast-align
