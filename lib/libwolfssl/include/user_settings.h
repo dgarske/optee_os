@@ -148,6 +148,9 @@ extern "C" {
 /* Math Configuration */
 /* ------------------------------------------------------------------------- */
 
+/* expose GCD */
+#define WOLFSSL_MATH_GCD
+
 #undef USE_FAST_MATH
 #if 1
     #define USE_FAST_MATH
@@ -169,7 +172,9 @@ extern "C" {
     #define WOLFSSL_HAVE_SP_DH
     #define WOLFSSL_HAVE_SP_ECC
     #define WOLFSSL_SP_CACHE_RESISTANT
-    #define WOLFSSL_SP_MATH     /* only SP math - eliminates fast math code */
+
+    /* need mp_div */
+    //#define WOLFSSL_SP_MATH     /* only SP math - eliminates fast math code */
 
     /* Optional Assembly Optimizations */
     #if defined(ARM32) || defined(ARM64)

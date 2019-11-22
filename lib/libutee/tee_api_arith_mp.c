@@ -21,7 +21,7 @@
 #include <utee_syscalls.h>
 #include <util.h>
 
-/* FMM = Modulus Math */
+/* FMM = Fast Modular Multiplication */
 
 /*************************************************************
  * PANIC
@@ -253,60 +253,86 @@ uint32_t TEE_BigIntGetBitCount(const TEE_BigInt *src)
 	return rc;
 }
 
+/* function computes dest = op1 + op2. All or some of dest, op1, and op2 MAY
+    point to the same memory region */
 void TEE_BigIntAdd(TEE_BigInt *dest, const TEE_BigInt *op1,
 		   const TEE_BigInt *op2)
 {
-	bigint_binary(dest, op1, op2, mbedtls_mpi_add_mpi);
+    int32_t rc;
+    mp_int* mpdest = (mp_int*)dest;
+    mp_int* mpop1 = (mp_int*)op1;
+    mp_int* mpop2 = (mp_int*)op2;
+
+    if (dest == NULL || op1 == NULL || op2 == NULL) {
+        TEE_BigInt_Panic("TEE_BigIntAdd: args");
+        return;
+    }
+
+    rc = mp_add(mpop1, mpop2, mpdest);
+    if (rc != MP_OKAY) {
+        TEE_BigInt_Panic("TEE_BigIntAdd: error");
+    }
 }
 
+/* function computes dest = op1 – op2. All or some of dest, op1, and op2 MAY
+    point to the same memory region */
 void TEE_BigIntSub(TEE_BigInt *dest, const TEE_BigInt *op1,
 		   const TEE_BigInt *op2)
 {
-	bigint_binary(dest, op1, op2, mbedtls_mpi_sub_mpi);
+    int32_t rc;
+    mp_int* mpdest = (mp_int*)dest;
+    mp_int* mpop1 = (mp_int*)op1;
+    mp_int* mpop2 = (mp_int*)op2;
+
+    if (dest == NULL || op1 == NULL || op2 == NULL) {
+        TEE_BigInt_Panic("TEE_BigIntSub: args");
+        return;
+    }
+
+    rc = mp_sub(mpop1, mpop2, mpdest);
+    if (rc != MP_OKAY) {
+        TEE_BigInt_Panic("TEE_BigIntSub: error");
+    }
 }
 
+/* function negates an operand: dest=-op. dest and op MAY point to the same */
 void TEE_BigIntNeg(TEE_BigInt *dest, const TEE_BigInt *src)
 {
-	mp_int mpi_dest;
+    mp_int* mpdest = (mp_int*)dest;
+    mp_int* mpsrc = (mp_int*)src;
 
-	get_mpi(&mpi_dest, dest);
+    if (dest == NULL || src == NULL) {
+        TEE_BigInt_Panic("TEE_BigIntNeg: args");
+        return;
+    }
 
-	if (dest != src) {
-		mp_int mpi_src;
-
-		get_const_mpi(&mpi_src, src);
-
-		MPI_CHECK(mbedtls_mpi_copy(&mpi_dest, &mpi_src));
-
-		put_mpi(&mpi_src);
-	}
-
-	mpi_dest.s *= -1;
-
-	put_mpi(&mpi_dest);
+    /* make copy - if not same */
+    if (mpsrc != mpdest) {
+        mp_copy(mpsrc, mpdest);
+    }
+    /* negate */
+    mpdest->sign = (mpdest->sign == MP_ZPOS) ? MP_NEG : MP_ZPOS;
 }
 
+/* function computes dest=op1 * op2. All or some of dest, op1, and op2 MAY
+    point to the same memory region */
 void TEE_BigIntMul(TEE_BigInt *dest, const TEE_BigInt *op1,
 		   const TEE_BigInt *op2)
 {
-	size_t bs1 = TEE_BigIntGetBitCount(op1);
-	size_t bs2 = TEE_BigIntGetBitCount(op2);
-	size_t s = TEE_BigIntSizeInU32(bs1) + TEE_BigIntSizeInU32(bs2);
-	TEE_BigInt zero[TEE_BigIntSizeInU32(1)] = { 0 };
-	TEE_BigInt *tmp = NULL;
+    int32_t rc;
+    mp_int* mpdest = (mp_int*)dest;
+    mp_int* mpop1 = (mp_int*)op1;
+    mp_int* mpop2 = (mp_int*)op2;
 
-	tmp = mempool_alloc(mbedtls_mpi_mempool, sizeof(uint32_t) * s);
-	if (!tmp)
-		TEE_Panic(TEE_ERROR_OUT_OF_MEMORY);
+    if (dest == NULL || op1 == NULL || op2 == NULL) {
+        TEE_BigInt_Panic("TEE_BigIntMul: args");
+        return;
+    }
 
-	TEE_BigIntInit(tmp, s);
-	TEE_BigIntInit(zero, TEE_BigIntSizeInU32(1));
-
-	bigint_binary(tmp, op1, op2, mbedtls_mpi_mul_mpi);
-
-	TEE_BigIntAdd(dest, tmp, zero);
-
-	mempool_free(mbedtls_mpi_mempool, tmp);
+    rc = mp_mul(mpop1, mpop2, mpdest);
+    if (rc != MP_OKAY) {
+        TEE_BigInt_Panic("TEE_BigIntMul: error");
+    }
 }
 
 void TEE_BigIntSquare(TEE_BigInt *dest, const TEE_BigInt *op)
@@ -314,69 +340,116 @@ void TEE_BigIntSquare(TEE_BigInt *dest, const TEE_BigInt *op)
 	TEE_BigIntMul(dest, op, op);
 }
 
+/* function computes dest_r and dest_q such that op1 = dest_q * op2 + dest_r.
+    It will round dest_q towards zero and dest_r will have the same sign as op1 */
 void TEE_BigIntDiv(TEE_BigInt *dest_q, TEE_BigInt *dest_r,
 		   const TEE_BigInt *op1, const TEE_BigInt *op2)
 {
-	mp_int mpi_dest_q;
-	mp_int mpi_dest_r;
-	mp_int mpi_op1;
-	mp_int mpi_op2;
-	mp_int *pop1 = &mpi_op1;
-	mp_int *pop2 = &mpi_op2;
+    int32_t rc;
+    mp_int* mpdestq = (mp_int*)dest_q;
+    mp_int* mpdestr = (mp_int*)dest_r;
+    mp_int* mpop1 = (mp_int*)op1;
+    mp_int* mpop2 = (mp_int*)op2;
 
-	get_mpi(&mpi_dest_q, dest_q);
-	get_mpi(&mpi_dest_r, dest_r);
+    if (mpdestq == NULL || mpdestr == NULL || op1 == NULL || op2 == NULL) {
+        TEE_BigInt_Panic("TEE_BigIntDiv: args");
+        return;
+    }
 
-	if (op1 == dest_q)
-		pop1 = &mpi_dest_q;
-	else if (op1 == dest_r)
-		pop1 = &mpi_dest_r;
-	else
-		get_const_mpi(&mpi_op1, op1);
-
-	if (op2 == dest_q)
-		pop2 = &mpi_dest_q;
-	else if (op2 == dest_r)
-		pop2 = &mpi_dest_r;
-	else if (op2 == op1)
-		pop2 = pop1;
-	else
-		get_const_mpi(&mpi_op2, op2);
-
-	MPI_CHECK(mbedtls_mpi_div_mpi(&mpi_dest_q, &mpi_dest_r, pop1, pop2));
-
-	put_mpi(&mpi_dest_q);
-	put_mpi(&mpi_dest_r);
-	if (pop1 == &mpi_op1)
-		put_mpi(&mpi_op1);
-	if (pop2 == &mpi_op2)
-		put_mpi(&mpi_op2);
+    rc = mp_div(mpop1, mpop2, mpdestq, mpdestr);
+    if (rc != MP_OKAY) {
+        TEE_BigInt_Panic("TEE_BigIntDiv: error");
+    }
 }
 
+/* function computes dest = op (mod n) such that 0 <= dest < n. dest and op MAY
+    point to the same memory */
 void TEE_BigIntMod(TEE_BigInt *dest, const TEE_BigInt *op, const TEE_BigInt *n)
 {
-	if (TEE_BigIntCmpS32(n, 2) < 0)
-		API_PANIC("Modulus is too short");
+    int32_t rc;
+    mp_int* mpdest = (mp_int*)dest;
+    mp_int* mpop = (mp_int*)op;
+    mp_int* mpn = (mp_int*)n;
 
-	bigint_binary(dest, op, n, mbedtls_mpi_mod_mpi);
+    if (dest == NULL || op == NULL || n == NULL) {
+        TEE_BigInt_Panic("TEE_BigIntMod: args");
+        return;
+    }
+
+    if (TEE_BigIntCmpS32(n, 2) < 0) {
+		TEE_BigInt_Panic("TEE_BigIntMod: Modulus is too short");
+    }
+
+    rc = mp_mod(mpop, mpn, mpdest);
+    if (rc != MP_OKAY) {
+        TEE_BigInt_Panic("TEE_BigIntMod: error");
+    }
 }
 
+/* function computes dest = (op1 + op2) (mod n). All or some of dest, op1, and
+    op2 MAY point to the same memory */
 void TEE_BigIntAddMod(TEE_BigInt *dest, const TEE_BigInt *op1,
 		      const TEE_BigInt *op2, const TEE_BigInt *n)
 {
-	bigint_binary_mod(dest, op1, op2, n, mbedtls_mpi_add_mpi);
+    int32_t rc;
+    mp_int* mpdest = (mp_int*)dest;
+    mp_int* mpop1 = (mp_int*)op1;
+    mp_int* mpop2 = (mp_int*)op2;
+    mp_int* mpn = (mp_int*)n;
+
+    if (dest == NULL || op1 == NULL || op2 == NULL || n == NULL) {
+        TEE_BigInt_Panic("TEE_BigIntAddMod: args");
+        return;
+    }
+
+    rc = mp_addmod(mpop1, mpop2, mpn, mpdest);
+    if (rc != MP_OKAY) {
+        TEE_BigInt_Panic("TEE_BigIntAddMod: error");
+    }
 }
 
+/* function computes dest = (op1 - op2) (mod n). All or some of dest, op1, and
+    op2 MAY point to the same memory */
 void TEE_BigIntSubMod(TEE_BigInt *dest, const TEE_BigInt *op1,
 		      const TEE_BigInt *op2, const TEE_BigInt *n)
 {
-	bigint_binary_mod(dest, op1, op2, n, mbedtls_mpi_sub_mpi);
+    int32_t rc;
+    mp_int* mpdest = (mp_int*)dest;
+    mp_int* mpop1 = (mp_int*)op1;
+    mp_int* mpop2 = (mp_int*)op2;
+    mp_int* mpn = (mp_int*)n;
+
+    if (dest == NULL || op1 == NULL || op2 == NULL || n == NULL) {
+        TEE_BigInt_Panic("TEE_BigIntSubMod: args");
+        return;
+    }
+
+    rc = mp_submod(mpop1, mpop2, mpn, mpdest);
+    if (rc != MP_OKAY) {
+        TEE_BigInt_Panic("TEE_BigIntSubMod: error");
+    }
 }
 
+/* function computes dest = (op1 * op2) (mod n). All or some of dest, op1, and
+    op2 MAY point to the same memory region */
 void TEE_BigIntMulMod(TEE_BigInt *dest, const TEE_BigInt *op1,
 		      const TEE_BigInt *op2, const TEE_BigInt *n)
 {
-	bigint_binary_mod(dest, op1, op2, n, mbedtls_mpi_mul_mpi);
+    int32_t rc;
+    mp_int* mpdest = (mp_int*)dest;
+    mp_int* mpop1 = (mp_int*)op1;
+    mp_int* mpop2 = (mp_int*)op2;
+    mp_int* mpn = (mp_int*)n;
+
+    if (dest == NULL || op1 == NULL || op2 == NULL || n == NULL) {
+        TEE_BigInt_Panic("TEE_BigIntMulMod: args");
+        return;
+    }
+
+    rc = mp_mulmod(mpop1, mpop2, mpn, mpdest);
+    if (rc != MP_OKAY) {
+        TEE_BigInt_Panic("TEE_BigIntMulMod: error");
+    }
 }
 
 void TEE_BigIntSquareMod(TEE_BigInt *dest, const TEE_BigInt *op,
@@ -388,133 +461,88 @@ void TEE_BigIntSquareMod(TEE_BigInt *dest, const TEE_BigInt *op,
 void TEE_BigIntInvMod(TEE_BigInt *dest, const TEE_BigInt *op,
 		      const TEE_BigInt *n)
 {
-	if (TEE_BigIntCmpS32(n, 2) < 0 || TEE_BigIntCmpS32(op, 0) == 0)
-		API_PANIC("too small modulus or trying to invert zero");
+    int32_t rc;
+    mp_int* mpdest = (mp_int*)dest;
+    mp_int* mpop = (mp_int*)op;
+    mp_int* mpn = (mp_int*)n;
 
-	mp_int mpi_dest;
-	mp_int mpi_op;
-	mp_int mpi_n;
-	mp_int *pop = &mpi_op;
+    if (dest == NULL || op == NULL || n == NULL) {
+        TEE_BigInt_Panic("TEE_BigIntInvMod: args");
+        return;
+    }
 
-	get_mpi(&mpi_dest, dest);
-	get_const_mpi(&mpi_n, n);
+    if (TEE_BigIntCmpS32(n, 2) < 0 || TEE_BigIntCmpS32(op, 0) == 0) {
+		TEE_BigInt_Panic("TEE_BigIntInvMod: too small modulus or trying to invert zero");
+    }
 
-	if (op == dest)
-		pop = &mpi_dest;
-	else
-		get_const_mpi(&mpi_op, op);
-
-	MPI_CHECK(mbedtls_mpi_inv_mod(&mpi_dest, pop, &mpi_n));
-
-	put_mpi(&mpi_dest);
-	put_mpi(&mpi_n);
-	if (pop == &mpi_op)
-		put_mpi(&mpi_op);
+    rc = mp_invmod(mpop, mpn, mpdest);
+    if (rc != MP_OKAY) {
+        TEE_BigInt_Panic("TEE_BigIntInvMod: error");
+    }
 }
 
+/* function determines whether gcd(op1, op2) == 1. op1 and op2 MAY point to the
+    same memory region */
 bool TEE_BigIntRelativePrime(const TEE_BigInt *op1, const TEE_BigInt *op2)
 {
-	bool rc;
-	mp_int mpi_op1;
-	mp_int mpi_op2;
-	mp_int *pop2 = &mpi_op2;
-	mp_int gcd;
+    int32_t rc;
+    mp_int* mpop1 = (mp_int*)op1;
+    mp_int* mpop2 = (mp_int*)op2;
+    mp_int mpgcd;
 
-	get_const_mpi(&mpi_op1, op1);
+    if (op1 == NULL || op2 == NULL) {
+        TEE_BigInt_Panic("TEE_BigIntRelativePrime: args");
+        return (bool)0;
+    }
 
-	if (op2 == op1)
-		pop2 = &mpi_op1;
-	else
-		get_const_mpi(&mpi_op2, op2);
+    mp_init(&mpgcd);
+    rc = mp_gcd(mpop1, mpop2, &mpgcd);
+    if (rc != MP_OKAY) {
+        TEE_BigInt_Panic("TEE_BigIntRelativePrime: error");
+        return (bool)0;
+    }
 
-	get_mpi(&gcd, NULL);
-
-	MPI_CHECK(mbedtls_mpi_gcd(&gcd, &mpi_op1, &mpi_op2));
-
-	rc = !mbedtls_mpi_cmp_int(&gcd, 1);
-
-	put_mpi(&gcd);
-	put_mpi(&mpi_op1);
-	if (pop2 == &mpi_op2)
-		put_mpi(&mpi_op2);
-
-	return rc;
+    rc = mp_cmp_d(&mpgcd, 1);
+    return (rc == MP_EQ);
 }
 
+/* function computes the greatest common divisor of the input parameters op1
+    and op2. op1 and op2 SHALL NOT both be zero. Furthermore it computes
+    coefficients u and v such that u*op1+v*op2==gcd. op1 and op2 MAY point to
+    the same memory region */
 void TEE_BigIntComputeExtendedGcd(TEE_BigInt *gcd, TEE_BigInt *u,
 				  TEE_BigInt *v, const TEE_BigInt *op1,
 				  const TEE_BigInt *op2)
 {
-	mp_int mpi_gcd_res;
-	mp_int mpi_op1;
-	mp_int mpi_op2;
-	mp_int *pop2 = &mpi_op2;
+    int32_t rc;
+    mp_int* mpgcd = (mp_int*)gcd;
+    mp_int* mpop1 = (mp_int*)op1;
+    mp_int* mpop2 = (mp_int*)op2;
 
-	get_mpi(&mpi_gcd_res, gcd);
-	get_const_mpi(&mpi_op1, op1);
-
-	if (op2 == op1)
-		pop2 = &mpi_op1;
-	else
-		get_const_mpi(&mpi_op2, op2);
-
-	if (!u && !v) {
-		if (gcd)
-			MPI_CHECK(mbedtls_mpi_gcd(&mpi_gcd_res, &mpi_op1,
-						  pop2));
-	} else {
-		mp_int mpi_u;
-		mp_int mpi_v;
-		int8_t s1 = mpi_op1.s;
-		int8_t s2 = pop2->s;
-		int cmp;
-
-		mpi_op1.s = 1;
-		pop2->s = 1;
-
-		get_mpi(&mpi_u, u);
-		get_mpi(&mpi_v, v);
-
-		cmp = mbedtls_mpi_cmp_abs(&mpi_op1, pop2);
-		if (cmp == 0) {
-			MPI_CHECK(mbedtls_mpi_copy(&mpi_gcd_res, &mpi_op1));
-			MPI_CHECK(mbedtls_mpi_lset(&mpi_u, 1));
-			MPI_CHECK(mbedtls_mpi_lset(&mpi_v, 0));
-		} else if (cmp > 0) {
-			mpi_egcd(&mpi_gcd_res, &mpi_u, &mpi_v, &mpi_op1, pop2);
-		} else {
-			mpi_egcd(&mpi_gcd_res, &mpi_v, &mpi_u, pop2, &mpi_op1);
-		}
-
-		mpi_u.s *= s1;
-		mpi_v.s *= s2;
-
-		put_mpi(&mpi_u);
-		put_mpi(&mpi_v);
-	}
-
-	put_mpi(&mpi_gcd_res);
-	put_mpi(&mpi_op1);
-	if (pop2 == &mpi_op2)
-		put_mpi(&mpi_op2);
+    if (u == NULL && v == NULL) {
+        rc = mp_gcd(mpop1, mpop2, mpgcd);
+        if (rc != MP_OKAY) {
+            TEE_BigInt_Panic("TEE_BigIntComputeExtendedGcd: error");
+        }
+    }
+    else {
+        /* Not supported */
+    }
 }
 
 int32_t TEE_BigIntIsProbablePrime(const TEE_BigInt *op,
 				  uint32_t confidenceLevel __unused)
 {
-	int rc;
-	mp_int mpi_op;
+	int32_t rc, isPrime = 0;
+    const int millerRabbins = 8;
+	mp_int* mpop = (mp_int*)op;
 
-	get_const_mpi(&mpi_op, op);
+    rc = mp_prime_is_prime(mpop, millerRabbins, &isPrime);
+    if (rc != MP_OKAY) {
+        TEE_BigInt_Panic("TEE_BigIntIsProbablePrime: error");
+    }
 
-	rc = mbedtls_mpi_is_prime(&mpi_op, rng_read, NULL);
-
-	put_mpi(&mpi_op);
-
-	if (rc)
-		return 0;
-
-	return 1;
+	return isPrime;
 }
 
 /*
@@ -558,40 +586,32 @@ void TEE_BigIntConvertFromFMM(TEE_BigInt *dest, const TEE_BigIntFMM *src,
 			      const TEE_BigInt *n __unused,
 			      const TEE_BigIntFMMContext *context __unused)
 {
-	mp_int mpi_dst;
-	mp_int mpi_src;
+    mp_int* mpdest = (mp_int*)dest;
+    mp_int* mpsrc = (mp_int*)src;
 
-	get_mpi(&mpi_dst, dest);
-	get_const_mpi(&mpi_src, src);
-
-	MPI_CHECK(mbedtls_mpi_copy(&mpi_dst, &mpi_src));
-
-	put_mpi(&mpi_dst);
-	put_mpi(&mpi_src);
+    if (src && dest) {
+        mp_copy(mpsrc, mpdest);
+    }
 }
 
 void TEE_BigIntComputeFMM(TEE_BigIntFMM *dest, const TEE_BigIntFMM *op1,
 			  const TEE_BigIntFMM *op2, const TEE_BigInt *n,
 			  const TEE_BigIntFMMContext *context __unused)
 {
-	mp_int mpi_dst;
-	mp_int mpi_op1;
-	mp_int mpi_op2;
-	mp_int mpi_n;
-	mp_int mpi_t;
+    int32_t rc;
+    mp_int* mpdest = (mp_int*)dest;
+    mp_int* mpop1 = (mp_int*)op1;
+    mp_int* mpop2 = (mp_int*)op2;
+    mp_int* mpn = (mp_int*)n;
 
-	get_mpi(&mpi_dst, dest);
-	get_const_mpi(&mpi_op1, op1);
-	get_const_mpi(&mpi_op2, op2);
-	get_const_mpi(&mpi_n, n);
-	get_mpi(&mpi_t, NULL);
+    if (dest == NULL || op1 == NULL || op2 == NULL || n == NULL) {
+        TEE_BigInt_Panic("TEE_BigIntMul: args");
+        return;
+    }
 
-	MPI_CHECK(mbedtls_mpi_mul_mpi(&mpi_t, &mpi_op1, &mpi_op2));
-	MPI_CHECK(mbedtls_mpi_mod_mpi(&mpi_dst, &mpi_t, &mpi_n));
-
-	put_mpi(&mpi_t);
-	put_mpi(&mpi_n);
-	put_mpi(&mpi_op2);
-	put_mpi(&mpi_op1);
-	put_mpi(&mpi_dst);
+    rc = mp_mul(mpop1, mpop2, mpdest);
+    if (rc != MP_OKAY) {
+        TEE_BigInt_Panic("TEE_BigIntMul: error");
+    }
+    rc = mp_mod(mpdest, mpn, mpdest);
 }
