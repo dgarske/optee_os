@@ -62,16 +62,26 @@ endif
 libdirs += $(ta-dev-kit-dir$(sm))/lib
 libnames += utils
 libdeps += $(ta-dev-kit-dir$(sm))/lib/libutils.a
+
+ifneq ($(CFG_TA_WOLFSSL_MPI),y)
 ifneq ($(CFG_TA_MBEDTLS_MPI),y)
 libnames += mpa
 libdeps += $(ta-dev-kit-dir$(sm))/lib/libmpa.a
 endif
+endif
+
 libnames += utee
 libdeps += $(ta-dev-kit-dir$(sm))/lib/libutee.a
+
 ifeq ($(CFG_TA_MBEDTLS),y)
 libnames += mbedtls
 libdeps += $(ta-dev-kit-dir$(sm))/lib/libmbedtls.a
 endif
+ifeq ($(CFG_TA_WOLFSSL),y)
+libnames += wolfssl
+libdeps += $(ta-dev-kit-dir$(sm))/lib/libwolfssl.a
+endif
+
 libnames += dl
 libdeps += $(ta-dev-kit-dir$(sm))/lib/libdl.a
 

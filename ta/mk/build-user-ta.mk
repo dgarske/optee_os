@@ -31,9 +31,12 @@ endif
 
 libdirs  = $(ta-dev-kit-dir$(sm))/lib
 libnames = utils utee
+ifneq ($(CFG_TA_WOLFSSL_MPI),y)
 ifneq ($(CFG_TA_MBEDTLS_MPI),y)
 libnames += mpa
 endif
+endif
+
 ifeq ($(CFG_TA_MBEDTLS),y)
 libnames += mbedtls
 endif
