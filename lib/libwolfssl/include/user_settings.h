@@ -27,6 +27,12 @@ extern "C" {
 #undef  WOLFSSL_USER_IO
 #define WOLFSSL_USER_IO
 
+/* ARM ASM Speedups for Neon AARCH */
+#if 0
+    WOLFSSL_ARMASM
+    WOLFSSL_NO_HASH_RAW
+#endif
+
 
 /* ------------------------------------------------------------------------- */
 /* Enable Features */

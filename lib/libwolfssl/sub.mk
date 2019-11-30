@@ -60,6 +60,9 @@ SRCS_CRYPTO += wc_port.c
 SRCS_CRYPTO += wolfevent.c
 SRCS_CRYPTO += wolfmath.c
 
+# OPTEE Port
+SRCS_CRYPTO += port/optee/tee_crypto.c
+
 # OBJS_WOLFSSL
 SRCS_TLS :=
 SRCS_TLS += crl.c
