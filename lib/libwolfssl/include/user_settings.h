@@ -183,7 +183,7 @@ extern "C" {
     //#define WOLFSSL_SP_MATH     /* only SP math - eliminates fast math code */
 
     /* Optional Assembly Optimizations */
-    #if defined(ARM32) || defined(ARM64)
+    #if 0 //defined(ARM32) || defined(ARM64)
         #define WOLFSSL_SP_ASM
         #if defined(ARM32)
             #define WOLFSSL_SP_ARM32_ASM
@@ -326,7 +326,7 @@ extern "C" {
     #define WOLFSSL_AES_COUNTER
 
     #undef  HAVE_AESCCM
-    #define HAVE_AESCCM
+    //#define HAVE_AESCCM
 #else
     #define NO_AES
 #endif
