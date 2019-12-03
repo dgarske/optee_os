@@ -60,8 +60,8 @@ def emit_load_segments(elffile, outf):
                 next_rwseg_va = segment['p_vaddr'] + segment['p_filesz']
             load_size += segment['p_filesz']
             n = n + 1
-
-    outf.write(b'const uint8_t ldelf_data[%d]' % round_up(load_size, 4096))
+    load_size = round_up(load_size, 4096)
+    outf.write(("const uint8_t ldelf_data[%d]" % load_size).encode('ascii'))
     outf.write(b' __aligned(4096) = {\n')
     i = 0
     for segment in elffile.iter_segments():
@@ -79,8 +79,8 @@ def emit_load_segments(elffile, outf):
                     outf.write(b' ')
     outf.write(b'};\n')
 
-    outf.write(b'const unsigned int ldelf_code_size = %d;\n' % code_size)
-    outf.write(b'const unsigned int ldelf_data_size = %d;\n' % data_size)
+    outf.write(("const unsigned int ldelf_code_size = %d;\n" % code_size).encode('ascii'))
+    outf.write(("const unsigned int ldelf_data_size = %d;\n" % data_size).encode('ascii'))
 
 
 def get_args():
@@ -108,8 +108,8 @@ def main():
     outf.write(b'#include <compiler.h>\n')
     outf.write(b'#include <stdint.h>\n')
     emit_load_segments(elffile, outf)
-    outf.write(b'const unsigned long ldelf_entry = %lu;\n' %
-               elffile.header['e_entry'])
+    outf.write(("const unsigned long ldelf_entry = %lu;\n" %
+               elffile.header['e_entry']).encode('ascii'))
 
     inf.close()
     outf.close()

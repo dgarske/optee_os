@@ -43,7 +43,7 @@ extern "C" {
 #endif
 
 #undef WOLFSSL_KEY_GEN
-#if 0
+#if 1
     #define WOLFSSL_KEY_GEN
 #endif
 
@@ -148,6 +148,9 @@ extern "C" {
 
 #undef  NO_SIG_WRAPPER
 //#define NO_SIG_WRAPPER
+
+#undef  WOLFSSL_NO_DER_TO_PEM
+#define WOLFSSL_NO_DER_TO_PEM
 
 
 /* ------------------------------------------------------------------------- */
